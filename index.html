@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IoT ลูกเต๋าสุ่ม</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            text-align: center;
+            background-color: #f4f4f4;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 40px auto;
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        p.instructions {
+            color: #555;
+            font-size: 1.1em;
+            margin-bottom: 30px;
+        }
+
+        #dice-display-container {
+            margin-bottom: 30px;
+        }
+
+        #dice-face {
+            width: 120px;
+            height: 120px;
+            background-color: #fff;
+            border: 3px solid #333;
+            border-radius: 15px;
+            margin: 20px auto;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 5px 5px 10px rgba(0, 0, 0, 0.1);
+            padding: 10px;
+        }
+
+        #dice-face svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        h2 {
+            color: #444;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+            margin-top: 40px;
+        }
+
+        #sort-controls {
+            margin-bottom: 10px;
+            text-align: right;
+        }
+
+        #sort-controls label,
+        #sort-controls select {
+            font-size: 0.9em;
+        }
+
+        #history-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        #history-table th,
+        #history-table td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+            font-size: 0.9em;
+        }
+
+        #history-table th {
+            background-color: #e9ecef;
+            color: #495057;
+        }
+
+        #history-table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        .loading-message,
+        .error-message {
+            color: #777;
+            font-style: italic;
+        }
+
+        #pagination-controls {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #pagination-controls button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 14px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        #pagination-controls button:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+
+        #pagination-controls button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        #page-info {
+            margin: 0 15px;
+            font-size: 0.9em;
+        }
+
+        #dice-statistics-list li {
+            background-color: #f9f9f9;
+            border: 1px solid #eee;
+            padding: 8px 12px;
+            margin-bottom: 5px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #dice-statistics-list .stat-face {
+            font-size: 1.5em;
+            margin-right: 10px;
+        }
+
+        #dice-statistics-list .stat-count {
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🎲 IoT สุ่มลูกเต๋า</h1>
+        <p class="instructions">กดปุ่มบนอุปกรณ์ ESP32 เพื่อทอยลูกเต๋า!</p>
+
+        <div id="dice-display-container">
+            <h2>ผลลัพธ์ล่าสุด</h2>
+            <div id="dice-face">
+            </div>
+        </div>
+
+        <h2>ประวัติการทอย</h2>
+        <div id="sort-controls">
+            <label for="sort-order">เรียงตาม: </label>
+            <select id="sort-order">
+                <option value="desc">ใหม่ล่าสุดไปเก่าสุด</option>
+                <option value="asc">เก่าสุดไปใหม่ล่าสุด</option>
+            </select>
+        </div>
+        <table id="history-table">
+            <thead>
+                <tr>
+                    <th>เวลา</th>
+                    <th>ผลลัพธ์</th>
+                </tr>
+            </thead>
+            <tbody id="history-body">
+                <tr>
+                    <td colspan="2" class="loading-message">กำลังโหลดประวัติ...</td>
+                </tr>
+            </tbody>
+        </table>
+        <div id="pagination-controls">
+            <button id="prev-button" disabled>&laquo; ก่อนหน้า</button>
+            <span id="page-info">หน้า - จาก -</span>
+            <button id="next-button" disabled>ถัดไป &raquo;</button>
+        </div>
+
+        <div id="statistics-container" style="margin-bottom: 30px;">
+            <h2>สถิติการทอย</h2>
+            <ul id="dice-statistics-list"
+                style="list-style-type: none; padding-left: 0; text-align: left; max-width: 300px; margin:auto;">
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const diceFaceElement = document.getElementById('dice-face');
+        const historyBodyElement = document.querySelector('#history-table tbody');
+        const prevButton = document.getElementById('prev-button');
+        const nextButton = document.getElementById('next-button');
+        const pageInfoElement = document.getElementById('page-info');
+        const sortOrderSelect = document.getElementById('sort-order');
+        const statisticsListElement = document.getElementById('dice-statistics-list');
+        // IP
+        const API_HISTORY_URL = 'http://192.168.1.33:3000/api/history';
+
+        const diceEmojis = ['?', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+
+        let fullHistoryData = [];
+        let currentPage = 1;
+        const itemsPerPage = 5;
+        let currentSortOrder = 'desc';
+
+        function getDiceSVG(value) {
+            const dotRadius = 10;
+            const svgSize = 100;
+            const diePadding = 5;
+            const dieSize = svgSize - (2 * diePadding);
+            let dots = '';
+            const positions = {
+                center: { cx: svgSize / 2, cy: svgSize / 2 },
+                topLeft: { cx: svgSize * 0.25, cy: svgSize * 0.25 },
+                topRight: { cx: svgSize * 0.75, cy: svgSize * 0.25 },
+                middleLeft: { cx: svgSize * 0.25, cy: svgSize / 2 },
+                middleRight: { cx: svgSize * 0.75, cy: svgSize / 2 },
+                bottomLeft: { cx: svgSize * 0.25, cy: svgSize * 0.75 },
+                bottomRight: { cx: svgSize * 0.75, cy: svgSize * 0.75 }
+            };
+            function createDot(pos) {
+                return `<circle cx="${pos.cx}" cy="${pos.cy}" r="${dotRadius}" fill="black" />`;
+            }
+            switch (value) {
+                case 1: dots = createDot(positions.center); break;
+                case 2: dots = createDot(positions.topLeft) + createDot(positions.bottomRight); break;
+                case 3: dots = createDot(positions.topLeft) + createDot(positions.center) + createDot(positions.bottomRight); break;
+                case 4: dots = createDot(positions.topLeft) + createDot(positions.topRight) + createDot(positions.bottomLeft) + createDot(positions.bottomRight); break;
+                case 5: dots = createDot(positions.topLeft) + createDot(positions.topRight) + createDot(positions.center) + createDot(positions.bottomLeft) + createDot(positions.bottomRight); break;
+                case 6: dots = createDot(positions.topLeft) + createDot(positions.topRight) + createDot(positions.middleLeft) + createDot(positions.middleRight) + createDot(positions.bottomLeft) + createDot(positions.bottomRight); break;
+                default: return `<text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-size="40" font-family="sans-serif" fill="#888">?</text>`;
+            }
+            return `<svg viewBox="0 0 ${svgSize} ${svgSize}" xmlns="http://www.w3.org/2000/svg"><rect x="${diePadding}" y="${diePadding}" width="${dieSize}" height="${dieSize}" rx="10" ry="10" fill="white" stroke="#333" stroke-width="3"/>${dots}</svg>`;
+        }
+
+        function updateDiceFace(rollValue) {
+            const numericValue = parseInt(rollValue);
+            if (diceFaceElement) {
+                diceFaceElement.innerHTML = getDiceSVG(numericValue);
+            }
+        }
+
+        function sortHistoryData() {
+            if (!Array.isArray(fullHistoryData)) {
+                fullHistoryData = [];
+            }
+            if (currentSortOrder === 'asc') {
+                fullHistoryData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            } else {
+                fullHistoryData.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            }
+        }
+
+        function displayCurrentPage() {
+            historyBodyElement.innerHTML = '';
+            if (fullHistoryData.length === 0) {
+                historyBodyElement.innerHTML = '<tr><td colspan="2" class="loading-message">ยังไม่มีประวัติการทอย</td></tr>';
+                updatePaginationControls();
+                return;
+            }
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            const endIndex = startIndex + itemsPerPage;
+            const paginatedItems = fullHistoryData.slice(startIndex, endIndex);
+            paginatedItems.forEach(item => {
+                const row = historyBodyElement.insertRow();
+                const cellTimestamp = row.insertCell();
+                const cellRollValue = row.insertCell();
+                let formattedTimestamp = 'Invalid Date';
+                if (item.timestamp) {
+                    try {
+                        formattedTimestamp = new Date(item.timestamp).toLocaleString('th-TH', {
+                            year: 'numeric', month: 'short', day: 'numeric',
+                            hour: '2-digit', minute: '2-digit', second: '2-digit'
+                        });
+                    } catch (e) {
+                        formattedTimestamp = item.timestamp;
+                    }
+                }
+                cellTimestamp.textContent = formattedTimestamp;
+                cellRollValue.textContent = item.roll_value;
+                cellRollValue.style.textAlign = 'center';
+                cellRollValue.style.fontWeight = 'bold';
+            });
+            updatePaginationControls();
+        }
+
+        function updatePaginationControls() {
+            const totalPages = Math.ceil(fullHistoryData.length / itemsPerPage);
+            if (totalPages === 0) {
+                pageInfoElement.textContent = 'หน้า 0 จาก 0';
+                prevButton.disabled = true;
+                nextButton.disabled = true;
+                return;
+            }
+            pageInfoElement.textContent = `หน้า ${currentPage} จาก ${totalPages}`;
+            prevButton.disabled = (currentPage === 1);
+            nextButton.disabled = (currentPage === totalPages || totalPages === 0);
+        }
+
+        function calculateAndDisplayStatistics() {
+            if (!statisticsListElement) return;
+            statisticsListElement.innerHTML = '';
+            if (!Array.isArray(fullHistoryData) || fullHistoryData.length === 0) {
+                statisticsListElement.innerHTML = '<li>ไม่มีข้อมูลสำหรับแสดงสถิติ</li>';
+                return;
+            }
+            const faceCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
+            fullHistoryData.forEach(item => {
+                const roll = parseInt(item.roll_value);
+                if (roll >= 1 && roll <= 6) {
+                    faceCounts[roll]++;
+                }
+            });
+            const sortedStats = Object.keys(faceCounts).map(face => {
+                return { face: parseInt(face), count: faceCounts[face] };
+            });
+            sortedStats.sort((a, b) => b.count - a.count);
+            sortedStats.forEach(stat => {
+                const listItem = document.createElement('li');
+                const faceDisplay = diceEmojis[stat.face] || stat.face;
+                listItem.innerHTML = `<span class="stat-face">${faceDisplay}</span> <span>ออก ${stat.count} ครั้ง</span>`;
+                statisticsListElement.appendChild(listItem);
+            });
+        }
+
+        async function fetchAndUpdateHistory() {
+            try {
+                const response = await fetch(API_HISTORY_URL);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status} on ${API_HISTORY_URL}`);
+                }
+                const data = await response.json();
+                fullHistoryData = Array.isArray(data) ? data : [];
+
+                sortHistoryData();
+
+                if (fullHistoryData && fullHistoryData.length > 0) {
+                    updateDiceFace(fullHistoryData[0].roll_value);
+                } else {
+                    updateDiceFace(0);
+                }
+
+                const totalPages = Math.ceil(fullHistoryData.length / itemsPerPage);
+                if (currentPage > totalPages && totalPages > 0) {
+                    currentPage = totalPages;
+                } else if (totalPages === 0) {
+                    currentPage = 1;
+                }
+
+                displayCurrentPage();
+                calculateAndDisplayStatistics();
+
+            } catch (error) {
+                console.error('Error fetching or processing history:', error);
+                historyBodyElement.innerHTML = `<tr><td colspan="2" class="error-message">ไม่สามารถโหลดข้อมูลได้: ${error.message}</td></tr>`;
+                updateDiceFace(0);
+                fullHistoryData = [];
+                currentPage = 1;
+                displayCurrentPage();
+                calculateAndDisplayStatistics();
+            }
+        }
+
+        prevButton.addEventListener('click', () => {
+            if (currentPage > 1) {
+                currentPage--;
+                displayCurrentPage();
+            }
+        });
+
+        nextButton.addEventListener('click', () => {
+            const totalPages = Math.ceil(fullHistoryData.length / itemsPerPage);
+            if (currentPage < totalPages) {
+                currentPage++;
+                displayCurrentPage();
+            }
+        });
+
+        sortOrderSelect.addEventListener('change', (event) => {
+            currentSortOrder = event.target.value;
+            sortHistoryData();
+            currentPage = 1;
+            displayCurrentPage();
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            currentSortOrder = sortOrderSelect.value;
+            fetchAndUpdateHistory();
+            setInterval(fetchAndUpdateHistory, 10000);
+        });
+    </script>
+
+</body>
+
+</html>
